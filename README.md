@@ -223,6 +223,17 @@ each), BF16, first call excluded, median request latency:
 | Intern-Decision-2B | 1043 ms | 399 ms | 2.6x | 59/60 |
 | Intern-Decision-4B | 2528 ms | 1609 ms | 1.6x | 60/60 |
 
+Use `configs/inference/mlx.json` (`"dtype": "float16"`). The Apple M1 GPU has no
+native BF16 arithmetic; FP16 was faster and closer to FP32 on the same hardware,
+same 12 requests in one process, median latency, and on the full Typed Decision
+suite (2,000 decisions, argmax):
+
+| Model | BF16 | FP16 | Max \|Δp\| vs FP32 (BF16 / FP16) | Typed Decision BF16 / FP16 |
+|---|---:|---:|---:|---:|
+| Intern-Decision-0.8B | 395 ms | 373 ms | 0.034 / 0.005 | 77.30% / 77.50% |
+| Intern-Decision-2B | 941 ms | 519 ms | 0.034 / 0.008 | 79.20% / 79.50% |
+| Intern-Decision-4B | 1847 ms | 1242 ms | 0.031 / 0.004 | 80.35% / 80.60% |
+
 On macOS the HF backend falls back to the PyTorch implementation of the linear
 attention layers (the fast kernels need CUDA). In float32 at temperature 1, MLX
 and HF agree on every decision of the checked Typed Decision rows with

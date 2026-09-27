@@ -210,6 +210,16 @@ MLX 后端在搭载 Apple silicon 的 macOS 上，通过 `mlx-lm` 运行 Qwen3.5
 | Intern-Decision-2B | 1043 ms | 399 ms | 2.6x | 59/60 |
 | Intern-Decision-4B | 2528 ms | 1609 ms | 1.6x | 60/60 |
 
+请使用 `configs/inference/mlx.json`（`"dtype": "float16"`）。Apple M1 GPU 没有原生 BF16 运算；
+在同一硬件上，FP16 更快且更接近 FP32（同一进程中相同的 12 条请求，延迟中位数；
+以及完整 Typed Decision 基准，2,000 个决策，取 argmax）：
+
+| 模型 | BF16 | FP16 | 相对 FP32 的最大 \|Δp\|（BF16 / FP16） | Typed Decision BF16 / FP16 |
+|---|---:|---:|---:|---:|
+| Intern-Decision-0.8B | 395 ms | 373 ms | 0.034 / 0.005 | 77.30% / 77.50% |
+| Intern-Decision-2B | 941 ms | 519 ms | 0.034 / 0.008 | 79.20% / 79.50% |
+| Intern-Decision-4B | 1847 ms | 1242 ms | 0.031 / 0.004 | 80.35% / 80.60% |
+
 在 macOS 上，HF 后端的线性注意力层回退到 PyTorch 实现（快速内核需要 CUDA）。
 在 float32、温度 1 下，MLX 与 HF 在所检查的 Typed Decision 样例上所有决策一致，
 |Δp| ≤ 0.006（`tests/check_mlx_backend.py`）；上表中的 BF16 差异来自两个后端的舍入。

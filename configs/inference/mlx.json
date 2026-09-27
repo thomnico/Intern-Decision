@@ -1,0 +1,9 @@
+{
+  "backend": "mlx",
+  "checkpoint": "checkpoints/intern-decision",
+  "max_length": 8192,
+  "dtype": "float16",
+  "thinking": {
+    "enabled": false
+  }
+}
