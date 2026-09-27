@@ -200,6 +200,35 @@ This backend loads `Qwen3_5ForConditionalGeneration` directly and requires no
 XTuner import or compatibility patch. Do not put `runtime/xtuner` on its
 `PYTHONPATH`. A compatible PyTorch CUDA wheel must be available for your system.
 
+### Apple silicon (MLX, text-only)
+
+```bash
+python3.12 -m venv .venv-mlx
+source .venv-mlx/bin/activate
+python -m pip install -r requirements-mlx.txt -r requirements-eval.txt
+```
+
+The MLX backend runs the Qwen3.5 language model through `mlx-lm` on macOS with
+Apple silicon. It builds the prompt, skeleton and `<decision>` positions exactly
+like the HF backend and projects hidden states to the vocabulary only at those
+positions. It is **text-only**: requests with images raise an error; use the HF
+backend for images. It is not the backend of the reported tables.
+
+Measured on an Apple M1 Max (32 GB), same 12 Typed Decision requests (5 fields
+each), BF16, first call excluded, median request latency:
+
+| Model | HF on MPS | MLX | Speed-up | Same decision |
+|---|---:|---:|---:|---:|
+| Intern-Decision-0.8B | 711 ms | 204 ms | 3.5x | 58/60 |
+| Intern-Decision-2B | 1043 ms | 399 ms | 2.6x | 59/60 |
+| Intern-Decision-4B | 2528 ms | 1609 ms | 1.6x | 60/60 |
+
+On macOS the HF backend falls back to the PyTorch implementation of the linear
+attention layers (the fast kernels need CUDA). In float32 at temperature 1, MLX
+and HF agree on every decision of the checked Typed Decision rows with
+|Δp| ≤ 0.006 (`tests/check_mlx_backend.py`); the BF16 differences above come
+from rounding in both backends.
+
 ### XTuner training and inference
 
 Model execution uses XTuner with the supplied runtime adaptations. The
@@ -236,6 +265,9 @@ Create a request JSON using [docs/DATA.md](docs/DATA.md), then:
 export MODEL_CHECKPOINT=/path/to/checkpoint
 python -m src.inference --backend hf --input /path/to/request.json
 ```
+
+On Apple silicon, use `--backend mlx` in the MLX environment (text requests only).
+`device` and `attn_implementation` are ignored by MLX; `dtype` is applied.
 
 For XTuner, activate its environment and explicitly enable its runtime:
 
@@ -383,6 +415,10 @@ python -m tests.check_temperature
 
 These CPU checks use synthetic fixtures and mocked models; they do not launch
 training, claim checkpoint quality, or replace GPU validation of a new runtime.
+In the MLX environment on Apple silicon, `MODEL_CHECKPOINT=/path/to/checkpoint
+python -m unittest -v tests.check_mlx_backend` checks the import, the text-only
+guard and float32 parity with the HF backend (install `requirements-inference.txt`
+as well for the HF side; set `MLX_PARITY_ROWS` to check more rows).
 In the XTuner environment, with `MODEL_PATH` pointing to a local base processor
 and the XTuner `PYTHONPATH` above, run `python -m tests.check_training_runtime`
 for CPU checks of causal label alignment, packing, image tokens and convolution
@@ -392,7 +428,7 @@ output/gradient parity. It creates synthetic media temporarily and loads no mode
 configs/         Portable inference and training configuration
 src/inputs/      Runtime schema, tokenization and collation only
 src/model/       Qwen architecture and frozen-vision training adaptations
-src/inference/   Native HF and XTuner engines, temperature scaling
+src/inference/   Native HF, XTuner and MLX engines, temperature scaling
 src/eval/        Scoring, calibration collection/fitting and replay
 src/service/     HTTP endpoint and browser demo
 runtime/xtuner/  Explicit XTuner compatibility environment

@@ -29,8 +29,12 @@ class DecisionEngine:
             from src.inference.xtuner_backend import XTunerBackend
 
             backend_class = XTunerBackend
+        elif backend == "mlx":
+            from src.inference.mlx_backend import MLXBackend
+
+            backend_class = MLXBackend
         else:
-            raise ValueError("backend must be hf or xtuner")
+            raise ValueError("backend must be hf, xtuner or mlx")
         self.checkpoint = str(Path(checkpoint).resolve())
         self.temperature = load_calibration(calibration_path, checkpoint) if calibration_path else 1.0
         self.calibration_path = str(Path(calibration_path).resolve()) if calibration_path else None

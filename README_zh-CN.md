@@ -188,6 +188,32 @@ python -m pip install -r requirements-inference.txt -r requirements-eval.txt
 不要将 `runtime/xtuner` 加入其 `PYTHONPATH`。
 系统需要可用且兼容的 PyTorch CUDA wheel。
 
+### Apple silicon（MLX，仅文本）
+
+```bash
+python3.12 -m venv .venv-mlx
+source .venv-mlx/bin/activate
+python -m pip install -r requirements-mlx.txt -r requirements-eval.txt
+```
+
+MLX 后端在搭载 Apple silicon 的 macOS 上，通过 `mlx-lm` 运行 Qwen3.5 语言模型。
+提示词、JSON 骨架和 `<decision>` 位置的构建方式与 HF 后端完全相同，只在这些位置
+将隐藏状态投影到词表。该后端**仅支持文本**：带图片的请求会报错，图片请使用 HF 后端。
+已报告的表格不是用该后端得到的。
+
+在 Apple M1 Max（32 GB）上测得的请求延迟中位数（相同的 12 条 Typed Decision 请求，
+每条 5 个字段，BF16，不计首次调用）：
+
+| 模型 | HF（MPS） | MLX | 加速 | 决策一致 |
+|---|---:|---:|---:|---:|
+| Intern-Decision-0.8B | 711 ms | 204 ms | 3.5x | 58/60 |
+| Intern-Decision-2B | 1043 ms | 399 ms | 2.6x | 59/60 |
+| Intern-Decision-4B | 2528 ms | 1609 ms | 1.6x | 60/60 |
+
+在 macOS 上，HF 后端的线性注意力层回退到 PyTorch 实现（快速内核需要 CUDA）。
+在 float32、温度 1 下，MLX 与 HF 在所检查的 Typed Decision 样例上所有决策一致，
+|Δp| ≤ 0.006（`tests/check_mlx_backend.py`）；上表中的 BF16 差异来自两个后端的舍入。
+
 ### XTuner 训练与推理
 
 模型通过 XTuner 和随附的运行时适配执行。上游源码版本已固定；
@@ -222,6 +248,9 @@ HF 环境保持独立。不同算子和 BF16 舍入可能造成后端间的概�
 export MODEL_CHECKPOINT=/path/to/checkpoint
 python -m src.inference --backend hf --input /path/to/request.json
 ```
+
+在 Apple silicon 上，于 MLX 环境中使用 `--backend mlx`（仅文本请求）。MLX 忽略 `device` 和
+`attn_implementation`，但会应用 `dtype`。
 
 使用 XTuner 时，激活对应环境并显式启用其运行时：
 
@@ -360,7 +389,10 @@ python -m tests.check_temperature
 ```
 
 这些 CPU 检查使用合成样例和 mock 模型，不启动训练，也不能证明 checkpoint 的质量
-或替代新运行时的 GPU 验证。在 XTuner 环境中，将 `MODEL_PATH` 指向本地基础模型
+或替代新运行时的 GPU 验证。在 Apple silicon 的 MLX 环境中，运行
+`MODEL_CHECKPOINT=/path/to/checkpoint python -m unittest -v tests.check_mlx_backend`，
+可检查导入、仅文本限制以及与 HF 后端的 float32 一致性（HF 一侧还需安装
+`requirements-inference.txt`；设置 `MLX_PARITY_ROWS` 可检查更多样例）。在 XTuner 环境中，将 `MODEL_PATH` 指向本地基础模型
 processor，并设置上述 XTuner `PYTHONPATH`，然后运行
 `python -m tests.check_training_runtime`，可在 CPU 上检查因果标签对齐、packing、
 图像 token 以及卷积输出/梯度的一致性。测试仅临时创建合成媒体，不加载模型权重。
@@ -369,7 +401,7 @@ processor，并设置上述 XTuner `PYTHONPATH`，然后运行
 configs/         可移植的推理与训练配置
 src/inputs/      运行时 schema、tokenization 和 collation
 src/model/       Qwen 架构与冻结视觉模块的训练适配
-src/inference/   HF 原生及 XTuner 引擎、温度缩放
+src/inference/   HF 原生、XTuner 及 MLX 引擎、温度缩放
 src/eval/        评分、校准预测收集、拟合与重放
 src/service/     HTTP 接口和浏览器演示
 runtime/xtuner/  显式启用的 XTuner 兼容环境
